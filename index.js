@@ -38,6 +38,7 @@ const generateBasicAuthToken = () => {
 const paymentUrl = 'https://backend.payhero.co.ke/api/v2/payments';
 const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
 
+// Initialize Telegram Client
 (async () => {
   console.log('Loading Telegram client...');
   const client = new TelegramClient(stringSession, api_id, api_hash, {
@@ -87,39 +88,12 @@ const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
 
   bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
-    const userId = query.from.id;
-    const user =query.from.username;
     const selectedData = query.data.split(',');
     const amount = parseInt(selectedData[0]);
     const duration = parseInt(selectedData[1]);
 
     if (selectedData[0] === 'cancel') {
       return bot.sendMessage(chatId, 'You have canceled the action. Type /start to begin again.');
-    }
-
-    if (selectedData[0] === 'start') {
-      // Show the payment options again
-      const paymentOptions = {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '2 minutes - Ksh 6', callback_data: '6,2' },
-              { text: '3 minutes - Ksh 10', callback_data: '10,3' }
-            ],
-            [
-              { text: '5 minutes - Ksh 15', callback_data: '15,5' },
-              { text: '20 minutes - Ksh 30', callback_data: '30,20' }
-            ],
-            [
-              { text: '1.5 hours - Ksh 50', callback_data: '50,90' }
-            ],
-            [{ text: 'Cancel', callback_data: 'cancel' }]
-          ],
-        },
-      };
-
-      bot.sendMessage(chatId, 'Welcome back! Choose a time plan to proceed with payment', paymentOptions);
-      return;
     }
 
     // Request for the user to enter their mobile number
@@ -135,7 +109,7 @@ const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
         channel_id: 1045,
         provider: 'm-pesa',
         external_reference: `INV-${new Date().getTime()}`, // Unique invoice reference
-        callback_url: 'https://your-callback-url.com', // Replace with your actual callback URL
+        callback_url: 'https://finalrepo-9u6d.onrender.com/payment-callback', // Replace with your actual callback URL
       };
 
       try {
@@ -149,7 +123,7 @@ const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
         const reference = response.data.reference;
         if (reference) {
           bot.sendMessage(chatId, `Payment request has been sent. Please complete the payment.`);
-          await fetchTransactionStatus(reference, chatId, client, userId, amount, duration);
+          await fetchTransactionStatus(reference, chatId, client, amount, duration);
         } else {
           bot.sendMessage(chatId, 'Payment request failed. Please try again later.');
         }
@@ -162,7 +136,7 @@ const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
 })();
 
 // Function to check transaction status
-async function fetchTransactionStatus(reference, chatId, client, userId, amount, duration) {
+async function fetchTransactionStatus(reference, chatId, client, amount, duration) {
   const authToken = generateBasicAuthToken();
   const url = `${statusUrl}?reference=${reference}`;
 
@@ -179,57 +153,12 @@ async function fetchTransactionStatus(reference, chatId, client, userId, amount,
 
       if (data.status === 'SUCCESS') {
         bot.sendMessage(chatId, 'Payment successful! You now have access to the channel.');
-
-        const channelId = '-2262212076'; // Replace with your private channel ID
-        const privateChannel = await client.getEntity(channelId);
-
-        // Add the user directly to the channel after successful payment
-        await client.invoke(
-          new Api.channels.InviteToChannel({
-            channel: privateChannel,
-            users: [userId],
-          })
-        );
-        // Calculate the expiration time
-        const expirationTime = new Date();
-        expirationTime.setMinutes(expirationTime.getMinutes() + duration);
-        
-        // Display expiration time to the user
-        const expirationMessage = `You have been added to the channel for ${duration} minutes.Your subscription will expire on ${expirationTime.toLocaleString()}.`;
-        bot.sendMessage(chatId, expirationMessage);
-
-        // Start the timer to kick the user after the paid time ends
-        setTimeout(async () => {
-          await client.invoke(
-            new Api.channels.EditBanned({
-              channel: privateChannel,
-              participant: userId,
-              bannedRights: new Api.ChatBannedRights({
-                untilDate: 0, // Ban forever after time expires
-                viewMessages: true, // Ban them from viewing messages
-              }),
-            })
-          );
-
-          // Send a message with an inline button to restart the process
-          const startButton = {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: 'Start Again', callback_data: 'start' }
-                ]
-              ]
-            }
-          };
-
-          bot.sendMessage(chatId, `Your access to the channel has expired. You have been banned from viewing messages.`, startButton);
-        }, duration * 60 * 1000); // Convert minutes to milliseconds
         break;
       } else if (data.status === 'FAILED') {
         bot.sendMessage(chatId, 'Payment failed. Please try again.');
         break;
       } else if (data.status === 'QUEUED') {
-        // Do not show retrying messages to the user
+        // Retry after waiting a few seconds
         attemptCount++;
         if (attemptCount === maxAttempts) {
           bot.sendMessage(chatId, 'Payment still queued. Please check your payment status later.');
@@ -246,6 +175,15 @@ async function fetchTransactionStatus(reference, chatId, client, userId, amount,
     }
   }
 }
+
+// Express to handle callback
+app.use(express.json()); // For parsing application/json
+app.post('/payment-callback', (req, res) => {
+  const callbackData = req.body;
+  console.log('Received callback data:', callbackData);
+  // Here you can process the callback data as needed
+  res.send({ status: 'received' });
+});
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
