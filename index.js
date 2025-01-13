@@ -77,13 +77,14 @@ bot.on('callback_query', async (query) => {
 
     // Initiate payment request
     const basicAuthToken = generateBasicAuthToken();
+    const externalReference = `INV-${new Date().getTime()}`; // Unique invoice reference
     const requestBody = {
       amount: amount,
       phone_number: userPhoneNumber,
       channel_id: 1045,
       provider: 'm-pesa',
-      external_reference: `INV-${new Date().getTime()}`, // Unique invoice reference
-      callback_url: 'https://finalrepo-9u6d.onrender.com/payment-callback', // Replace with your actual callback URL
+      external_reference: externalReference,
+      callback_url: 'https://finalrepo-9u6d.onrender.com/payment-callback',
     };
 
     try {
@@ -95,9 +96,12 @@ bot.on('callback_query', async (query) => {
       });
 
       const reference = response.data.reference;
+      console.log(`Payment initiated. Reference: ${reference}, ExternalReference: ${externalReference}`);
+
       if (reference) {
         // Save the reference and status as pending
         pendingPayments[reference] = { status: 'pending', chatId, amount, duration };
+        console.log(`Pending payment saved: ${reference}`);
         bot.sendMessage(chatId, `Payment request has been sent. Please complete the payment.`);
       } else {
         bot.sendMessage(chatId, 'Payment request failed. Please try again later.');
@@ -114,13 +118,15 @@ app.post('/payment-callback', (req, res) => {
   const callbackData = req.body;
   console.log('Received callback data:', callbackData);
 
-  // Check if the callback data contains the MpesaReceiptNumber
+  // Extract necessary fields from callback
   const { MpesaReceiptNumber, Status, ExternalReference, Amount } = callbackData.response;
+  console.log(`Callback received for ExternalReference: ${ExternalReference}`);
 
   if (MpesaReceiptNumber && ExternalReference) {
     // Check if the payment is in the pending payments object
     if (pendingPayments[ExternalReference]) {
       const paymentData = pendingPayments[ExternalReference];
+      console.log(`Found pending payment for reference: ${ExternalReference}`);
       
       if (Status === 'Success') {
         // Payment was successful
