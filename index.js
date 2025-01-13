@@ -95,12 +95,12 @@ bot.on('callback_query', async (query) => {
         }
       });
 
-      const reference = response.data.reference;
+      const reference = response.data.externalReference;
       console.log(`Payment initiated. Reference: ${reference}, ExternalReference: ${externalReference}`);
 
-      if (reference) {
+      if (externalReference) {
         // Save the reference and status as pending
-        pendingPayments[reference] = { status: 'pending', chatId, amount, duration };
+        pendingPayments[externalReference] = { status: 'pending', chatId, amount, duration };
         console.log(`Pending payment saved: ${reference}`);
         bot.sendMessage(chatId, `Payment request has been sent. Please complete the payment.`);
       } else {
