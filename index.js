@@ -95,13 +95,13 @@ bot.on('callback_query', async (query) => {
         }
       });
 
-      const reference = response.data.externalReference;
+      const reference = response.data.reference;
       console.log(reference);
       console.log(`Payment initiated. Reference: ${reference}, ExternalReference: ${externalReference}`);
 
-      if (externalReference) {
+      if (reference) {
         // Save the reference and status as pending
-        pendingPayments[externalReference] = { status: 'pending', chatId, amount, duration };
+        pendingPayments[reference] = { status: 'pending', chatId, amount, duration };
         console.log(`Pending payment saved: ${reference}`);
         bot.sendMessage(chatId, `Payment request has been sent. Please Enter M-pesa pin to complete the payment.`);
       } else {
@@ -113,7 +113,6 @@ bot.on('callback_query', async (query) => {
     }
   });
 });
-
 // Payment callback endpoint to update payment status
 app.post('/payment-callback', async (req, res) => {
   const callbackData = req.body;
