@@ -30,7 +30,7 @@ const generateBasicAuthToken = () => {
 
 // API URL
 const paymentUrl = 'https://backend.payhero.co.ke/api/v2/payments';
-const statusUrl = 'https://backend.payhero.co.ke/api/v2/transaction-status';
+
 
 // Express setup
 app.use(express.json());
@@ -102,7 +102,7 @@ bot.on('callback_query', async (query) => {
         // Save the reference and status as pending
         pendingPayments[externalReference] = { status: 'pending', chatId, amount, duration };
         console.log(`Pending payment saved: ${reference}`);
-        bot.sendMessage(chatId, `Payment request has been sent. Please complete the payment.`);
+        bot.sendMessage(chatId, `Payment request has been sent. Please Enter M-pesa pin to complete the payment.`);
       } else {
         bot.sendMessage(chatId, 'Payment request failed. Please try again later.');
       }
@@ -114,16 +114,16 @@ bot.on('callback_query', async (query) => {
 });
 
 // Payment callback endpoint to update payment status
-app.post('/payment-callback', (req, res) => {
+app.post('/payment-callback', async (req, res) => {
   const callbackData = req.body;
   console.log('Received callback data:', callbackData);
 
   // Extract necessary fields from callback
-  const { MpesaReceiptNumber, Status, ExternalReference, Amount } = callbackData.response;
+  const { MpesaReceiptNumber, Status, ExternalReference,  } = callbackData.response;
   console.log(`Callback received for ExternalReference: ${ExternalReference}`);
 
   if (MpesaReceiptNumber && ExternalReference) {
-    // Check if the payment is in the pending payments object
+   // Check if the payment is in the pending payments object
     if (pendingPayments[ExternalReference]) {
       const paymentData = pendingPayments[ExternalReference];
       console.log(`Found pending payment for reference: ${ExternalReference}`);
@@ -131,7 +131,52 @@ app.post('/payment-callback', (req, res) => {
       if (Status === 'Success') {
         // Payment was successful
         bot.sendMessage(paymentData.chatId, 'Payment successful! You now have access to the channel.');
-        paymentData.status = 'completed'; // Update status to completed
+        paymentData.status = 'completed'; 
+        const channelId = '-2262212076'; // Replace with your private channel ID
+        const privateChannel = await client.getEntity(channelId);
+
+        // Add the user directly to the channel after successful payment
+        await client.invoke(
+          new Api.channels.InviteToChannel({
+            channel: privateChannel,
+            users: [userId],
+          })
+        );
+        // Calculate the expiration time
+        const expirationTime = new Date();
+        expirationTime.setMinutes(expirationTime.getMinutes() + duration);
+        
+        // Display expiration time to the user
+        const expirationMessage = `You have been added to the channel for ${duration} minutes.Your subscription will expire on ${expirationTime.toLocaleString()}.`;
+        bot.sendMessage(chatId, expirationMessage);
+
+        // Start the timer to kick the user after the paid time ends
+        setTimeout(async () => {
+          await client.invoke(
+            new Api.channels.EditBanned({
+              channel: privateChannel,
+              participant: userId,
+              bannedRights: new Api.ChatBannedRights({
+                untilDate: 0, // Ban forever after time expires
+                viewMessages: true, // Ban them from viewing messages
+              }),
+            })
+          );
+
+          // Send a message with an inline button to restart the process
+          const startButton = {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Start Again', callback_data: 'start' }
+                ]
+              ]
+            }
+          };
+
+          bot.sendMessage(chatId, `Your access to the channel has expired. You have been banned from viewing messages.`, startButton);
+        }, duration * 60 * 1000); // Convert minutes to milliseconds
+        delete pendingPayments[ExternalReference];
       } else {
         // Payment failed
         bot.sendMessage(paymentData.chatId, 'Payment failed. Please try again.');
@@ -139,10 +184,10 @@ app.post('/payment-callback', (req, res) => {
       }
     } else {
       console.log(`No pending payment found for reference: ${ExternalReference}`);
+      delete pendingPayments[ExternalReference];
     }
   } else {
-    // No MpesaReceiptNumber, handle as unprocessed or pending callback
-    console.log('No payment receipt found in callback data. Payment not processed.');
+    bot.sendMessage(paymentData.chatId, 'Payment failed. Please try again./start');
   }
 
   res.send({ status: 'received' });
